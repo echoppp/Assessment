@@ -1,0 +1,333 @@
+---
+title: "Assessment 3 Business Report of Media Franchises"
+author: "Yalan Huang S4664845 Huiyuzi Li s4664198 Yuanyuan Peng s4666415"
+date: "06/04/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#install.packages("tidyverse")
+library(tidyverse)
+library(skimr)
+```
+
+```{r}
+#install.packages("tidymodels")
+#install.packages("knitr")
+library(knitr)
+library(tidymodels)
+```
+
+
+```{r}
+#install.packages("randomForest")
+library(randomForest)
+```
+
+**---------------------------------------------------------------------------------------------------**
+
+<font size="6"> **EXECUTIVE SUMMARY** </font>
+
+The Media and Entertainment (M&E) industry has multiple segments that combine into one vertical; Movies/Cinema, Television, Music, Publishing, Radio, Internet, Advertising and Gaming. As we can see, advances in technology have further fueled the reign of media entertainment. For example, at the very beginning of twenty century,  the printing media dominated the market such as the popularity of book, manga. However, over a few decades, the film and gaming industry has become the main stream due to its adoption of new technology.
+
+
+
+
+
+
+**--------------------------------------------------------------------------------------------------**
+
+<font size="6"> **INTRODUCTION** </font>
+
+In recent days, businesses are moving towards R rapidly. Companies as diverse as Google, Microsoft, Facebook , ANZ Bank are using the R language for their data analytical tasks. And in this group work, we use R to help us analyze data because R platform can visualize the data through creating graphs and diagrams which can present data in a direct way.
+
+Our data includes seven variables which are franchise, revenue_category, revenue, year_created, original_media, creators and owners. It can be seen that most of this data is the factor data which means this data is descripted by characters rather than numbers. Thus,we choose random forest modelling to analyze this data because as it can generate reasonable predictions across a wide range of data while requiring little configuration.
+
+This report will focus on how to use random forest modelling to analyse and predict data.
+
+
+
+
+
+
+**---------------------------------------------------------------------------------------------------**
+
+<font size="6"> **BUSINESS PROBLEM** </font>
+
+This report will explore whether revenue level or the category of the revenue can be predicted.
+
+**Major Question:** Can we predict the revenue_level or revenue_category of the franchises?
+
+**Sub-question:**
+Q1. Can we predict the revenue_level of the franchises by knowing their revenue and revenue_category?
+Q2. Can we predict revenue_category of the franchises by knowing their revenue and revenue_level?
+
+
+
+
+**---------------------------------------------------------------------------------------------------**
+
+<font size="6"> **ABOUT THE DATASET [THE MEDIA FRANCHISES]** </font>
+
+<font size="5"> **LOAD THE DATASET** </font>
+
+```{r}
+media_franchises <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-07-02/media_franchises.csv")
+
+```
+
+<font size="5"> **Data Cleansing** </font>
+
+<font size="3"> **1.Check the type of variable** </font>
+
+```{r}
+skim(media_franchises)
+```
+
+<font size="3"> **2.Change the type of variable** </font>
+
+Because the factor is an important vector in R, it determines the analysis method. To lower the error when R is learning dataset, we change the character to factor for better analysis.
+
+```{r}
+new_media <- media_franchises %>%
+  mutate_if(is.character, factor)
+```
+
+
+
+
+
+
+
+
+
+
+**---------------------------------------------------------------------------------------------------**
+
+<font size="6"> **DESCRIPTIVE and EXPLORATORY ANALYSIS** </font>
+
+<font size="5"> **Skim the dataset** </font>
+
+```{r}
+skim(new_media)
+```
+
+In this data analysis, it uses skim function to generally show rows, columns, column types. And there are some details about mean, standard deviation. In this skim result, we focus on the output of revenue details. As can be seen, the mean of revenue is 4.74 and median is 1. The revenues in the one quarters and in three quarters are 0.211 and 5 respectively. 
+
+```{r}
+new_media %>%
+  ggplot(aes(revenue)) +
+  geom_boxplot() +
+  coord_flip()
+```
+
+From the boxplot chart, it shows that there are some extreme high revenue which increases the average revenue. Most of revenue are under of range of 5.
+
+<font size="5"> **Create a new variable of revenue level** </font>
+
+According to **skim** result and boxplot result, we decide to divide revenue into three level to find the relationship between revenue and revenue_level.
+
+```{r}
+new_media <-new_media %>%
+  mutate(revenue_level = case_when(revenue>= 4.75~"high",
+                                revenue <=0.45 ~ "low",
+                                TRUE ~ "medium"))
+
+new_media <- new_media %>%
+  mutate_if(is.character, factor)
+
+skim(new_media)
+```
+
+<font size="5"> **Which kind of revenue category has the highest revenue?** </font>
+
+```{r}
+new_media %>%
+  ggplot(aes(revenue_category, revenue, fill = revenue_category)) +
+  geom_col() +
+  coord_flip()
+```
+
+It can be seen that **Merchandise, Licensing & Retail** has the highest revenue among different revenue categories.
+
+<font size="5"> **What is the relation between the year_created and the revenue?** </font>
+
+```{r}
+new_media %>%
+  ggplot(aes(revenue, year_created, colour=revenue_category, size= revenue)) +
+  geom_point() +
+  coord_flip()
+```
+
+As can be seen from the point chart, there are more big points when the time is passing. And it comes out more color points when the time is passing. It means that revenue increases with each passing year and more revenue come out when the time is passing.
+
+<font size="5"> **Is the relation between the revenue and year_created dependent on revenue_category?**
+</font>
+
+```{r}
+new_media %>%
+  ggplot(aes(revenue, year_created, colour= year_created, size= revenue)) +
+  geom_count() +
+  facet_wrap(~revenue_category)
+
+```
+
+From these charts, it shows that most of points are concentrating on the high position. **Merchandise, Licensing & Retail** has the widest range of the blue point distribution.
+The revenue change shows a positive increase by the year change. And the revenue generated varies over time for different revenue categories.
+
+
+
+**---------------------------------------------------------------------------------------------------**
+
+<font size="6"> **PREDICTIVE ANALYSIS** </font>
+
+<font size="5"> **Model 1: Predict final revenue_level using Classification Model** </font>
+
+From our descriptive analysis, we found that there is significant relationship between revenue_level and revenue. We would like to build a model to make those predictions.
+
+<font size="4"> **Step 1: Split the dataset into Training & Testing dataset.** </font>
+
+```{r}
+new_media_split<- initial_split(new_media)
+new_media_train <- training(new_media_split)
+new_media_test <- testing(new_media_split)
+```
+
+<font size="4"> **Step 2: Pre-process the data.** </font>
+
+<font size="3">**2.1 Set the recipe & get the ingredients - recipe()**</font>
+
+We explore the revenue_level and divided into three category, which is low, medium and high. Now we decide that our **output variable** is revenue_level and **input variable** or **Predictors** is revenue and other variables. Because the output is a character ,we use ramdonForset to build the model. Why we choose revenue as a predictor？ Because the revenue levels were significantly determined by which revenue interval it locates.
+
+```{r}
+new_media_recipe1 <- recipe(revenue_level ~ .,data=new_media_train)
+
+summary(new_media_recipe1)
+```
+
+<font size="3"> **2.2 Write the recipe steps - step_xxx()** </font>
+
+The purpose of this step is to remove closely related variables. After doing this step, the model will be more accurate. 
+```{r}
+new_media_recipe1 <- new_media_recipe1 %>%
+  step_center(all_numeric(), -all_outcomes()) %>%
+  step_scale(all_numeric(), -all_outcomes()) %>% 
+  step_corr(all_numeric())
+```
+
+
+<font size="3">**2.3 Get ready with the prep - prep()**</font>
+
+```{r}
+new_media_prep <- prep(new_media_recipe1 , training = new_media_train)
+summary(new_media_prep )
+```
+
+<font size="3">**2.4  Bake the recipe - bake()**</font>
+
+```{r}
+new_media_bake <- bake(new_media_prep, new_media_train)
+```
+
+<font size="4"> **Step 3: Build a model.** </font>
+
+We choose ramdonForest to build model,because the output variable is a character.
+```{r}
+model1 <- randomForest(revenue_level ~ revenue_category+revenue, data= new_media_bake)
+
+print(model1)
+```
+
+<font size="4"> **Step 4: Evaluate the model.** </font>
+
+For this modelling, the error rate is only 0.42%, which means the model is highly fit for this dataset. The model could predict the output value by its predictor with only 0.42% error rate. In this case,The error rate is quite low, we could assume that the model is a high quality one. But Whether the model is ideal or not depends on company's expectation.
+
+
+<font size="5"> **Model 2: Predict final revenue_category using Classification Model** </font>
+
+<font size="4"> **Step 1: Split the dataset into Training & Testing datasets.** </font>
+
+In the model, we have divided the dataset into traning and testing, so we can use them for this modeling too. 
+
+<font size="4"> **Step 2: Pre-process the data.** </font>
+
+<font size="3">**2.1 Set the recipe & get the ingredients - recipe()**</font>
+
+From descriptive analysis, we explore the relationship between revenue_category and revenue. For this modelling, we will use 3 variables from the dataset.
+We decide that our **output variable** is revenue_category and **input variable** or **Predictors** is revenue and revenue_level. Because the output is a character ,we use ramdonForset to build the model. 
+```{r}
+new_media_recipe2 <- recipe(revenue_category ~ .,data=new_media_train)
+summary(new_media_recipe2)
+```
+
+<font size="3">**2.2 Write the recipe steps - step_xxx()**</font>
+
+The purpose of this step is to remove closely related variables. After doing this step, the model will be more accurate. 
+```{r}
+new_media_recipe2 <- new_media_recipe2 %>%
+  step_center(all_numeric(), -all_outcomes()) %>%
+  step_scale(all_numeric(), -all_outcomes()) %>% 
+  step_corr(all_numeric())
+```
+
+
+<font size="3">**2.3 Get ready with the prep - prep()**</font>
+
+```{r}
+new_media_prep2 <- prep(new_media_recipe2 , training = new_media_train)
+summary(new_media_prep2)
+```
+
+<font size="3">**2.4  Bake the recipe - bake()**</font>
+
+```{r}
+new_media_bake2 <- bake(new_media_prep2, new_media_train)
+```
+
+<font size="4"> **Step 3: Build a model.** </font>
+
+We choose ramdonForest to build model,because the output variable is a character.
+```{r}
+model2 <- randomForest(revenue_category ~ revenue+revenue_level, data= new_media_bake2)
+print(model2)
+```
+
+<font size="4"> **Step 4: Evaluate the model.** </font>
+
+For this modelling, the error rate is 57.41%, which means over half prediction could be wrong. This is unacceptable. We assume that this modelling is not a good model.
+
+**--------------------------------------------------------------------------------------------------**
+
+<font size="6"> **FINDINGS & CONCLUSION** </font>
+
+This report analyzes the dataset called media franchise. The data time is from 1920 to 2000. From the above analysis, it shows some relations between **revenue_level** and **revenue_ category**. We choose two kinds of numeric variable called **revenue** and **year_created**, which tries to find some possible relations. 
+Before 1930, there is just few kinds of media category which could create revenue and the **merchandise, licensing and retail** is the most one. As the time goes by, there came out more kinds of media categories could create income. From 1970, the video game was developing (powers, 2014). The revenue generated by video game became prominent. It was trying to catch out the **merchandise, licensing and retail** from 1960. But the **merchandise, licensing and retail** was still keeping the most amount revenue. And all kinds of **revenue_category** came out and kept the increasing trend from 1970.
+
+
+
+
+
+
+
+
+
+**--------------------------------------------------------------------------------------------------**
+
+<font size="6"> **RECOMMENDATIONS** </font>
+
+There are too many character value in this dataset and just two numeric value. So it is very hard to find some linear relation among this dataset. So we can just choose the randomforest modelling to analyze the dataset. In addition, the character value has too many categories that negatively affects the randomforest modelling to analyze. That leads to restrictions on choosing the possible related value to analyze. 
+It suggests that there could be more kinds of numeric value about the media franchise, which could make a difference finding some linear relation in this dataset. Before the data cleaning, the different categories could be more general and cut down the amount of these categories in these factor variable. 
+
+**--------------------------------------------------------------------------------------------------**
+
+<font size="6"> **REFERENCE** </font>
+ 
+Matt Powers, 2014, A Brief History of Video Game Development viewed on February 28, 2014.
+  https://www.gamedeveloper.com/business/a-brief-history-of-video-game-development
+
+
